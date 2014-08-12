@@ -26,6 +26,7 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/export.h>
+#include <linux/firmware.h>
 #include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -43,6 +44,7 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/suspend.h>
 #include <linux/syscore_ops.h>
 #include <dt-bindings/soc/tegra-pmc.h>
 
@@ -204,6 +206,7 @@ struct tegra_pmc_soc {
  * @lp0_vec_size: size of the LP0 warm boot code
  * @powergates_available: Bitmap of available power gates
  * @powergates_lock: mutex for power gate register access
+ * @suspend_notifier: PM notifier for suspend events
  */
 struct tegra_pmc {
 	struct device *dev;
@@ -233,6 +236,7 @@ struct tegra_pmc {
 	DECLARE_BITMAP(powergates_available, TEGRA_POWERGATE_MAX);
 
 	struct mutex powergates_lock;
+	struct notifier_block suspend_notifier;
 };
 
 #ifdef CONFIG_PM_SLEEP
@@ -1500,6 +1504,57 @@ void tegra_pmc_enter_suspend_mode(enum tegra_suspend_mode mode)
 	value |= PMC_CNTRL_CPU_PWRREQ_OE;
 	tegra_pmc_writel(value, PMC_CNTRL);
 }
+
+/*
+ * When starting to enter LP0 without LP0 boot code, try to request the
+ * code with request_firmware, if it can't be loaded, switch to LP1.
+ */
+static int tegra_pmc_suspend_notifier(struct notifier_block *nb,
+				      unsigned long event,
+				      void *ptr)
+{
+	const struct firmware *fw;
+	int ret;
+	void *fw_buff;
+	const char fw_name[] = "tegra_lp0_resume.fw";
+	char fw_path[40];
+
+	if (event != PM_SUSPEND_PREPARE)
+		return 0;
+
+	if (pmc->suspend_mode < TEGRA_SUSPEND_LP0 || pmc->lp0_vec_size)
+		return 0;
+
+	switch (tegra_get_chip_id()) {
+	case TEGRA210:
+		sprintf(fw_path, "nvidia/tegra210/%s", fw_name);
+		break;
+	default:
+		break;
+	}
+
+	ret = request_firmware(&fw, fw_path, pmc->dev);
+	if (ret) {
+		dev_info(pmc->dev, "Disabling LP0, no resume code found\n");
+		pmc->suspend_mode = TEGRA_SUSPEND_LP1;
+		return 0;
+	}
+
+	fw_buff = (void *)__get_dma_pages(GFP_DMA32, get_order(fw->size));
+	if (!fw_buff) {
+		pmc->suspend_mode = TEGRA_SUSPEND_LP1;
+		goto suspend_check_done;
+	}
+	dev_info(pmc->dev, "Loaded LP0 firmware with request_firmware.\n");
+
+	memcpy(fw_buff, fw->data, fw->size);
+	pmc->lp0_vec_phys = virt_to_phys(fw_buff);
+	pmc->lp0_vec_size = fw->size;
+suspend_check_done:
+	release_firmware(fw);
+
+	return 0;
+}
 #else
 #define tegra_pmc_wake_syscore_suspend	NULL
 #define tegra_pmc_wake_syscore_resume	NULL
@@ -1576,6 +1631,7 @@ static int tegra_pmc_parse_dt(struct tegra_pmc *pmc, struct device_node *np)
 	pmc->cpu_pwr_good_en = of_property_read_bool(np,
 				"nvidia,cpu-pwr-good-en");
 
+	values[0] = values[1] = 0;
 	if (of_property_read_u32_array(np, "nvidia,lp0-vec", values,
 				       ARRAY_SIZE(values)))
 		if (pmc->suspend_mode == TEGRA_SUSPEND_LP0)
@@ -1758,6 +1814,11 @@ static int tegra_pmc_probe(struct platform_device *pdev)
 	iounmap(pmc->base);
 	pmc->base = base;
 	mutex_unlock(&pmc->powergates_lock);
+
+#ifdef CONFIG_PM_SLEEP
+	pmc->suspend_notifier.notifier_call = tegra_pmc_suspend_notifier;
+	register_pm_notifier(&pmc->suspend_notifier);
+#endif
 
 	return 0;
 }
