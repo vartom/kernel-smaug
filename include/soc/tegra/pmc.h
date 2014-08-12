@@ -173,6 +173,7 @@ int tegra_io_rail_power_off(unsigned int id);
 enum tegra_suspend_mode tegra_pmc_get_suspend_mode(void);
 void tegra_pmc_set_suspend_mode(enum tegra_suspend_mode mode);
 void tegra_pmc_enter_suspend_mode(enum tegra_suspend_mode mode);
+void tegra_pmc_lp0_resume(void);
 
 #else
 static inline int tegra_powergate_is_powered(unsigned int id)
