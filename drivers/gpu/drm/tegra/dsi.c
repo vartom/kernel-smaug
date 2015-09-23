@@ -782,14 +782,9 @@ static void tegra_dsi_disable(struct tegra_dsi *dsi)
 		tegra_dsi_ganged_disable(dsi);
 	}
 
-	tegra_dsi_lock(dsi);
-
 	value = tegra_dsi_readl(dsi, DSI_POWER_CONTROL);
 	value &= ~DSI_POWER_CONTROL_ENABLE;
 	tegra_dsi_writel(dsi, value, DSI_POWER_CONTROL);
-	tegra_dsi_set_dc_active(dsi, false);
-
-	tegra_dsi_unlock(dsi);
 
 	if (dsi->slave)
 		tegra_dsi_disable(dsi->slave);
@@ -905,6 +900,8 @@ static void tegra_dsi_encoder_disable(struct drm_encoder *encoder)
 	if (output->panel)
 		drm_panel_disable(output->panel);
 
+	tegra_dsi_lock(dsi);
+
 	tegra_dsi_video_disable(dsi);
 
 	/*
@@ -919,11 +916,15 @@ static void tegra_dsi_encoder_disable(struct drm_encoder *encoder)
 		tegra_dc_commit(dc);
 	}
 
+	tegra_dsi_set_dc_active(dsi, false);
+
 	err = tegra_dsi_wait_idle(dsi, 100);
 	if (err < 0)
 		dev_dbg(dsi->dev, "failed to idle DSI: %d\n", err);
 
 	tegra_dsi_soft_reset(dsi);
+
+	tegra_dsi_unlock(dsi);
 
 	if (output->panel)
 		drm_panel_unprepare(output->panel);
