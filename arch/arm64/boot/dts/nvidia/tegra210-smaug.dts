@@ -6,6 +6,7 @@
 #include <dt-bindings/mfd/max77620.h>
 #include <dt-bindings/gpio/tegra-gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/thermal/thermal.h>
 
 #include "tegra210.dtsi"
 
@@ -35,6 +36,19 @@
 		device_type = "memory";
 		reg = < 0x0 0x80000000 0x0 0x7d200000 >,
 		      < 0x1 0x00000000 0x0 0x40000000 >;
+	};
+
+	clock@70110000 {
+		status = "okay";
+
+		vdd-cpu-supply = <&max77621_cpu>;
+		nvidia,sample-rate = <12500>;
+		nvidia,droop-ctrl = <0x00000f00>;
+		nvidia,force-mode = <1>;
+		nvidia,cf = <10>;
+		nvidia,ci = <0>;
+		nvidia,cg = <2>;
+		nvidia,i2c-fs-rate = <400000>;
 	};
 
 	host1x@50000000 {
@@ -104,7 +118,15 @@
 	serial@70006300 {
 		compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
 		status = "okay";
+
+		bluetooth {
+			compatible = "brcm,bcm43438-bt";
+			shutdown-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_HIGH>;
+		//	host-wakeup-gpios = <&gpio TEGRA_GPIO(H, 5) GPIO_ACTIVE_HIGH>;
+			device-wakeup-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
+		};
 	};
+
 	pinmux: pinmux@700008d4 {
 		pinctrl-names = "bootloader";
 		pinctrl-0 = <&pinmux_boot>;
@@ -1450,6 +1472,8 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 
+			#thermal-sensor-cells = <0>;
+
 			pinctrl-names = "default";
 			pinctrl-0 = <&max77620_default>;
 
@@ -1666,16 +1690,20 @@
 				compatible = "maxim,max77621";
 				reg = <0x1b>;
 				regulator-name = "PPVAR_CPU";
-				regulator-min-microvolt = <850000>;
-				regulator-max-microvolt = <1170000>;
+				regulator-min-microvolt = <800000>;
+				regulator-max-microvolt = <1231250>;
 				regulator-ramp-delay = <12500>;
 				maxim,externally-enable;
 				maxim,enable-gpio = <&max77620 5 0>;
 				maxim,dvs-default-state = <1>;
 				regulator-always-on;
 				maxim,enable-active-discharge;
-				maxim,enable-bias-control;
-				maxim,enable-etr;
+	//			maxim,enable-bias-control;
+	//			maxim,enable-etr;
+				maxim,enable-remote-sense;
+				junction-warn-millicelsius = <120>;
+
+				#thermal-sensor-cells = <0>;
 		};
 
 		max77621_gpu: pmic@1c {
@@ -1688,9 +1716,13 @@
 				maxim,externally-enable;
 				maxim,enable-gpio = <&max77620 6 0>;
 				maxim,dvs-default-state = <1>;
-				maxim,disable-etr;
+//				maxim,disable-etr;
+				maxim,enable-remote-sense;
 				maxim,enable-active-discharge;
-				maxim,enable-bias-control;
+//				maxim,enable-bias-control;
+				junction-warn-millicelsius = <120>;
+
+				#thermal-sensor-cells = <0>;
 		};
 	};
 
@@ -1854,7 +1886,7 @@
 
 	sdhci@700b0200 { /* WiFi/BT on this bus */
 		power-gpios = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
-		vmmc-supply = <&pp3300>;
+//		vmmc-supply = <&pp3300>;
 		no-1-8-v;
 		bus-width = <4>;
 		keep-power-in-suspend;
@@ -1865,7 +1897,7 @@
 	sdhci@700b0600 {
 		bus-width = <8>;
 		non-removable;
-		vmmc-supply = <&pp3300>;
+//		vmmc-supply = <&pp3300>;
 		status = "okay";
 	};
 
@@ -1896,20 +1928,32 @@
 
 	cpus {
 		cpu@0 {
+			compatible = "arm,cortex-a57", "arm,armv8";
 			vdd-cpu-supply = <&max77621_cpu>;
 			enable-method = "psci";
+			next-level-cache = <&L2>;
 		};
 
 		cpu@1 {
+			compatible = "arm,cortex-a57", "arm,armv8";
 			enable-method = "psci";
+			next-level-cache = <&L2>;
 		};
 
 		cpu@2 {
+			compatible = "arm,cortex-a57", "arm,armv8";
 			enable-method = "psci";
+			next-level-cache = <&L2>;
 		};
 
 		cpu@3 {
+			compatible = "arm,cortex-a57", "arm,armv8";
 			enable-method = "psci";
+			next-level-cache = <&L2>;
+		};
+
+		L2: l2-cache {
+			compatible = "cache";
 		};
 	};
 
@@ -2048,5 +2092,201 @@
 			regulator-min-microvolt = <5000000>;
 			regulator-max-microvolt = <5000000>;
 		};
+	};
+
+	thermal-zones {
+		cpu {
+			polling-delay-passive = <250>;
+			polling-delay = <500>;
+			hwmon;
+
+			trips {
+				cpu_alert0: cpu-alert-0 {
+					temperature = <55000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				cpu_alert1: cpu-alert-1 {
+					temperature = <60000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				cpu_alert2: cpu-alert-2 {
+					temperature = <65000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				cpu_alert3: cpu-alert-3 {
+					temperature = <70000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				cpu_alert4: cpu-alert-4 {
+					temperature = <80000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				map1 {
+					trip = <&cpu_alert0>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map2 {
+					trip = <&cpu_alert1>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map3 {
+					trip = <&cpu_alert2>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map4 {
+					trip = <&cpu_alert3>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map5 {
+					trip = <&cpu_alert4>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+			};
+		};
+
+		gpu {
+			polling-delay-passive = <250>;
+			polling-delay = <500>;
+			hwmon;
+
+			trips {
+				gpu_alert0: gpu-alert-0 {
+					temperature = <50000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				gpu_alert1: gpu-alert-1 {
+					temperature = <55000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				gpu_alert2: gpu-alert-2 {
+					temperature = <60000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				gpu_alert3: gpu-alert-3 {
+					temperature = <70000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+				gpu_alert4: gpu-alert-4 {
+					temperature = <80000>;
+					hysteresis = <5000>;
+					type = "active";
+				};
+			};
+
+			cooling-maps {
+				map1 {
+					trip = <&gpu_alert0>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map2 {
+					trip = <&gpu_alert1>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map3 {
+					trip = <&gpu_alert2>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map4 {
+					trip = <&gpu_alert3>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+				map5 {
+					trip = <&gpu_alert4>;
+					cooling-device = <&throttle_heavy 1 1>;
+				};
+			};
+		};
+
+		mem {
+			hwmon;
+		};
+
+		pllx {
+			hwmon;
+		};
+
+		pmic {
+			polling-delay-passive = <250>;
+			polling-delay = <500>;
+			thermal-sensors = <&max77620>;
+
+			trips {
+				pmic_die_warn_temp_thresh: hot-die {
+					temperature = <120000>;
+					type = "hot";
+					hysteresis = <0>;
+				};
+
+				pmic_die_cirt_temp_thresh: critical-die {
+					temperature = <140000>;
+					type = "critical";
+					hysteresis = <0>;
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&pmic_die_warn_temp_thresh>;
+					cooling-device = <&throttle_heavy 1 1>;
+					contribution = <100>;
+				};
+			};
+		};
+
+		cpu_vreg {
+			polling-delay-passive = <250>;
+			polling-delay = <500>;
+			thermal-sensors = <&max77621_cpu>;
+
+			trips {
+				cpu_vreg_die_warn_temp_thresh: hot-die {
+					temperature = <120000>;
+					type = "hot";
+					hysteresis = <0>;
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu_vreg_die_warn_temp_thresh>;
+					cooling-device = <&throttle_heavy 1 1>;
+					contribution = <100>;
+				};
+			};
+		};
+
+		gpu_vreg {
+			polling-delay-passive = <250>;
+			polling-delay = <500>;
+			thermal-sensors = <&max77621_gpu>;
+
+			trips {
+				gpu_vreg_die_warn_temp_thresh: hot-die {
+					temperature = <120000>;
+					type = "hot";
+					hysteresis = <0>;
+				};
+			};
+
+			cooling-maps {
+				/*
+				* There are currently no cooling maps,
+				* because there are no cooling devices.
+				*/
+			};
+		};
+
 	};
 };
