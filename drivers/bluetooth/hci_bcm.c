@@ -91,6 +91,7 @@ struct bcm_device {
 
 	struct device		*dev;
 
+	bool			device_wakeup_usable;
 	const char		*name;
 	struct gpio_desc	*device_wakeup;
 	struct gpio_desc	*shutdown;
@@ -218,19 +219,24 @@ static int bcm_gpio_set_power(struct bcm_device *dev, bool powered)
 	if (err)
 		goto err_clk_disable;
 
-	err = dev->set_device_wakeup(dev, powered);
+/*	err = dev->set_device_wakeup(dev, powered);
 	if (err)
 		goto err_revert_shutdown;
-
+*/
 	if (!powered && !IS_ERR(dev->clk) && dev->clk_enabled)
 		clk_disable_unprepare(dev->clk);
 
 	dev->clk_enabled = powered;
 
+	if (powered) {
+		/* Don't rely on CTS and wait until chip came up */
+		msleep(15);
+	}
+
 	return 0;
 
-err_revert_shutdown:
-	dev->set_shutdown(dev, !powered);
+//err_revert_shutdown:
+//	dev->set_shutdown(dev, !powered);
 err_clk_disable:
 	if (powered && !IS_ERR(dev->clk) && !dev->clk_enabled)
 		clk_disable_unprepare(dev->clk);
@@ -321,6 +327,7 @@ static int bcm_setup_sleep(struct hci_uart *hu)
 	}
 	kfree_skb(skb);
 
+	bcm->dev->device_wakeup_usable = true;
 	bt_dev_dbg(hu->hdev, "Set Sleep Parameters VSC succeeded");
 
 	return 0;
@@ -867,8 +874,10 @@ static int bcm_apple_set_device_wakeup(struct bcm_device *dev, bool awake)
 
 static int bcm_apple_set_shutdown(struct bcm_device *dev, bool powered)
 {
-	if (ACPI_FAILURE(acpi_evaluate_object(powered ? dev->btpu : dev->btpd,
-					      NULL, NULL, NULL)))
+	pr_info("device_wakeup pin %sset to %d\n", dev->device_wakeup_usable ? "" : "not ", awake);
+
+	if (dev->device_wakeup_usable &&
+	    ACPI_FAILURE(acpi_execute_simple_method(dev->btlp, NULL, !awake)))
 		return -EIO;
 
 	return 0;
@@ -903,7 +912,8 @@ static inline int bcm_apple_get_resources(struct bcm_device *dev)
 
 static int bcm_gpio_set_device_wakeup(struct bcm_device *dev, bool awake)
 {
-	gpiod_set_value(dev->device_wakeup, awake);
+	if (dev->device_wakeup_usable)
+		gpiod_set_value(dev->device_wakeup, awake);
 	return 0;
 }
 
