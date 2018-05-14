@@ -199,12 +199,12 @@ static int panel_jdi_unprepare(struct drm_panel *panel)
 	/* T5 = 2ms */
 	usleep_range(2000, 4000);
 
-	regulator_disable(jdi->supply);
+	regulator_disable(jdi->ddi_supply);
 
 	/* T6 = 2ms */
-	usleep_range(2000, 4000);
+	usleep_range(5000, 6000);
 
-	regulator_disable(jdi->ddi_supply);
+	regulator_disable(jdi->supply);
 
 	jdi->prepared = false;
 
@@ -442,7 +442,7 @@ static int panel_jdi_enable(struct drm_panel *panel)
 }
 
 static const struct drm_display_mode default_mode = {
-	.clock = 304416,
+	.clock = 331334,
 	.hdisplay = 2560,
 	.hsync_start = 2560 + 80,
 	.hsync_end = 2560 + 80 + 80,
@@ -578,7 +578,7 @@ static int jdi_panel_add(struct panel_jdi *jdi)
 {
 	struct device_node *np;
 	enum of_gpio_flags gpio_flags;
-	int err;
+	int err = 0;
 	unsigned int value;
 
 	jdi->mode = &default_mode;
@@ -616,7 +616,7 @@ static int jdi_panel_add(struct panel_jdi *jdi)
 		return err;
 	}
 
-	value = (jdi->enable_gpio_flags & GPIO_ACTIVE_LOW) ? 1 : 0;
+	value = (jdi->enable_gpio_flags & GPIO_ACTIVE_LOW) ? 0 : 1;
 	err = gpio_direction_output(jdi->enable_gpio, value);
 	if (err < 0) {
 		DRM_INFO("Set enable gpio direction failed: %d\n", err);
@@ -639,7 +639,7 @@ static int jdi_panel_add(struct panel_jdi *jdi)
 		return err;
 	}
 
-	value = (jdi->reset_gpio_flags & GPIO_ACTIVE_LOW) ? 0 : 1;
+	value = (jdi->reset_gpio_flags & GPIO_ACTIVE_LOW) ? 1 : 0;
 	err = gpio_direction_output(jdi->reset_gpio, value);
 	if (err < 0) {
 		DRM_INFO("Set enable gpio direction failed: %d\n", err);
