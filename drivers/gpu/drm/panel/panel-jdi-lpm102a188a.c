@@ -149,6 +149,7 @@ static int panel_jdi_disable(struct drm_panel *panel)
 
 	if (jdi->backlight) {
 		jdi->backlight->props.power = FB_BLANK_POWERDOWN;
+		jdi->backlight->props.state |= BL_CORE_FBBLANK;
 		backlight_update_status(jdi->backlight);
 	}
 
@@ -255,17 +256,19 @@ static int panel_jdi_prepare(struct drm_panel *panel)
 		return 0;
 
 
-	gpio_set_value(jdi->enable_gpio,
-		(jdi->enable_gpio_flags & GPIO_ACTIVE_LOW) ? 0 : 1);
+	if (!jdi->enabled) {
+		gpio_set_value(jdi->enable_gpio,
+			(jdi->enable_gpio_flags & GPIO_ACTIVE_LOW) ? 0 : 1);
 
-	/* T2 = 10ms */
-	usleep_range(10000, 15000);
+		/* T3 = 10ms */
+		usleep_range(10000, 15000);
 
-	gpio_set_value(jdi->reset_gpio,
-		(jdi->reset_gpio_flags & GPIO_ACTIVE_LOW) ? 1 : 0);
+		gpio_set_value(jdi->reset_gpio,
+			(jdi->reset_gpio_flags & GPIO_ACTIVE_LOW) ? 1 : 0);
 
-	/* Specified by JDI @ 3ms, subject to change */
-	usleep_range(3000, 5000);
+		/* Specified by JDI @ 3ms, subject to change */
+		usleep_range(3000, 5000);
+	}
 
 	err = regulator_enable(jdi->supply);
 	if (err < 0) {
@@ -387,7 +390,7 @@ static int panel_jdi_prepare(struct drm_panel *panel)
 	 * We need to wait 150ms between mipi_dsi_dcs_exit_sleep_mode() and
 	 * mipi_dsi_dcs_set_display_on().
 	 */
-	msleep(145);
+	msleep(150);
 
 	/*
 	 * Unless we send one frame of image data before display turn on, the
@@ -432,6 +435,7 @@ static int panel_jdi_enable(struct drm_panel *panel)
 		return 0;
 
 	if (jdi->backlight) {
+		jdi->backlight->props.state &= ~BL_CORE_FBBLANK;
 		jdi->backlight->props.power = FB_BLANK_UNBLANK;
 		backlight_update_status(jdi->backlight);
 	}
@@ -645,24 +649,6 @@ static int jdi_panel_add(struct panel_jdi *jdi)
 		DRM_INFO("Set enable gpio direction failed: %d\n", err);
 		return err;
 	}
-
-	err = regulator_enable(jdi->supply);
-	if (err < 0) {
-		DRM_INFO("failed to enable supply: %d\n", err);
-		return err;
-	}
-
-	/* T1 = 2ms */
-	usleep_range(2000, 4000);
-
-	err = regulator_enable(jdi->ddi_supply);
-	if (err < 0) {
-		DRM_INFO("failed to enable ddi_supply: %d\n", err);
-		return err;
-	}
-
-	/* T2 = 1ms */
-	usleep_range(1000, 3000);
 
 	drm_panel_init(&jdi->base);
 	jdi->base.dev = &jdi->link1->dev;
